@@ -33,6 +33,7 @@ public class DeadConfig {
         args.put("x-message-ttl", 60 * 1000);
         args.put("x-dead-letter-exchange", BiConstant.BI_DLX_EXCHANGE_NAME);
         args.put("x-dead-letter-routing-key", BiConstant.BI_DLX_ROUTING_KEY);
+        System.out.println("hi");
         return new Queue(BiConstant.BI_QUEUE_NAME, false, false,false,args);
     }
 
