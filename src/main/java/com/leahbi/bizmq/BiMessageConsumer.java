@@ -19,6 +19,8 @@ import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
 import java.io.IOException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ThreadPoolExecutor;
 
 @Component
 @Slf4j
@@ -30,50 +32,69 @@ public class BiMessageConsumer {
     @Resource
     private AIManager aiManager;
 
+    @Resource
+    private ThreadPoolExecutor threadPoolExecutor;
+
     @RabbitListener(ackMode = "MANUAL", queues = {BiConstant.BI_QUEUE_NAME})
     public void receiveMessage(String message, Channel channel, @Header(AmqpHeaders.DELIVERY_TAG) long deliveryTag) throws IOException {
+        CompletableFuture.runAsync(()->{
+            System.out.println("threadPoolExecutor.getActiveCount():" + threadPoolExecutor.getActiveCount());
 
-        log.info("receiveMessage message = {}", message);
-        if(StringUtils.isBlank(message)){
-            // 拒绝消息
-            channel.basicNack(deliveryTag, false, false);
-            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "消息为空");
-        }
+            log.info("receiveMessage message = {}", message);
+            if(StringUtils.isBlank(message)){
+                // 拒绝消息
+                try {
+                    channel.basicNack(deliveryTag, false, false);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+                throw new BusinessException(ErrorCode.SYSTEM_ERROR, "消息为空");
+            }
 
-        long chartId = Long.parseLong(message);
-        Chart chart = chartService.getById(chartId);
-        if(chart == null){
-            channel.basicNack(deliveryTag, false, false);
-            throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "图表为空");
-        }
-        // 修改图表状态为running执行中
-        Chart updateChart = new Chart();
-        updateChart.setId(chartId);
-        updateChart.setStatus(String.valueOf(ChartStatusEnum.RUNNING.getValue()));
-        boolean updateResult = chartService.updateById(updateChart);
-        if(!updateResult){
-            chartService.handlerUpdateChartError(chartId, "更新图表状态失败");
-            return;
-        }
-        // 调用AI
-        String result = aiManager.doChat(CommonConstant.BI_MODEL_ID, handleUserInput(chart));
-        // 对返回的数据进行拆分
-        String[] split = result.split("【【【【【");
-        if(split.length < 3){
-            chartService.handlerUpdateChartError(chartId, "AI生成错误");
-        }
-        String genChart = split[1].trim();
-        String genResult = split[2].trim();
-        Chart finishedChart = new Chart();
-        finishedChart.setId(chartId);
-        finishedChart.setGenChart(genChart);
-        finishedChart.setGenResult(genResult);
-        finishedChart.setStatus(ChartStatusEnum.SUCCEED.getValue());
-        boolean finishedResult = chartService.updateById(finishedChart);
-        if(!finishedResult){
-            chartService.handlerUpdateChartError(chartId, "更新图表成功状态失败");
-        }
-        channel.basicAck(deliveryTag, false);
+            long chartId = Long.parseLong(message);
+            Chart chart = chartService.getById(chartId);
+            if(chart == null){
+                try {
+                    channel.basicNack(deliveryTag, false, false);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+                throw new BusinessException(ErrorCode.NOT_FOUND_ERROR, "图表为空");
+            }
+            // 修改图表状态为running执行中
+            Chart updateChart = new Chart();
+            updateChart.setId(chartId);
+            updateChart.setStatus(String.valueOf(ChartStatusEnum.RUNNING.getValue()));
+            boolean updateResult = chartService.updateById(updateChart);
+            if(!updateResult){
+                chartService.handlerUpdateChartError(chartId, "更新图表状态失败");
+                return;
+            }
+            // 调用AI
+            String result = aiManager.doChat(CommonConstant.BI_MODEL_ID, handleUserInput(chart));
+            // 对返回的数据进行拆分
+            String[] split = result.split("【【【【【");
+            if(split.length < 3){
+                chartService.handlerUpdateChartError(chartId, "AI生成错误");
+            }
+            String genChart = split[1].trim();
+            String genResult = split[2].trim();
+            Chart finishedChart = new Chart();
+            finishedChart.setId(chartId);
+            finishedChart.setGenChart(genChart);
+            finishedChart.setGenResult(genResult);
+            finishedChart.setStatus(ChartStatusEnum.SUCCEED.getValue());
+            boolean finishedResult = chartService.updateById(finishedChart);
+            if(!finishedResult){
+                chartService.handlerUpdateChartError(chartId, "更新图表成功状态失败");
+            }
+            try {
+                channel.basicAck(deliveryTag, false);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }, threadPoolExecutor);
+
     }
 
     private String handleUserInput(Chart chart){

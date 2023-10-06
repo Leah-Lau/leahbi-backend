@@ -22,6 +22,7 @@ import com.leahbi.service.ChartService;
 import com.leahbi.service.UserService;
 import com.leahbi.utils.ExcelUtils;
 import com.leahbi.utils.SqlUtils;
+import io.reactivex.rxjava3.core.Completable;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -279,6 +280,7 @@ public class ChartController {
         ThrowUtils.throwIf(!saveResult, ErrorCode.OPERATION_ERROR, "图表保存失败");
 
         CompletableFuture.runAsync(() -> {
+            System.out.println("threadPoolExecutor.getActiveCount():" + threadPoolExecutor.getActiveCount());
             // 修改图表状态为running执行中
             Chart updateChart = new Chart();
             updateChart.setId(chart.getId());

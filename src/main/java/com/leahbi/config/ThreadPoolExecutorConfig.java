@@ -19,6 +19,7 @@ public class ThreadPoolExecutorConfig{
             public Thread newThread(@NotNull Runnable r) {
                 Thread thread = new Thread(r);
                 thread.setName("线程"+count);
+                System.out.println("thread name is:" + thread.getName());
                 ++count;
                 return thread;
             }
